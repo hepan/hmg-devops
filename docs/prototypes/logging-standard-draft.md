@@ -8,32 +8,32 @@
 
 ## 建议的记录约定
 
-建议每条记录为一条 UTF-8 JSON 对象（JSON Lines），字段含义与 [OpenTelemetry Logs 数据模型](https://opentelemetry.io/docs/specs/otel/logs/data-model/) 对齐；**不要求引入 OpenTelemetry SDK 或直接输出 OTLP**。日志产生时间和采集端看到的时间是两个不同概念；后者由采集系统补充，不能伪装为服务自己的时间。
+暂不统一 JSON 结构或输出格式。各服务沿用适合自身的文本或结构化日志，但应让采集 Agent 能从服务配置与日志中识别以下语义；具体字段名及映射由各产品记录。[OpenTelemetry Logs 数据模型](https://opentelemetry.io/docs/specs/otel/logs/data-model/) 仅作为语义参考，不要求引入其 SDK 或输出 OTLP。日志产生时间与采集端观察时间须区分，后者由采集系统补充。
 
-| 字段（建议名） | 本公司服务写入规则 | 用途 |
+| 信息语义（示例名，非统一字段名） | 本公司服务记录要求 | 用途 |
 | --- | --- | --- |
 | `timestamp` | 必填，带时区的事件发生时间 | 按时间关联；时间不可信时采集侧另记观察时间 |
 | `service.name` | 必填、稳定的逻辑服务名 | 跨主机辨认同一服务；参考 [OTel service.name](https://opentelemetry.io/docs/specs/semconv/resource/service/) |
 | `severity` | 必填，取 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR`、`FATAL` 之一 | 筛选候选异常；等级并不等于告警 |
 | `message` | 必填，简短描述发生的事，不直接嵌入患者资料 | 人工阅读与模型概括 |
-| `event.name` | 对可供监控判断的事件必填，稳定的事件类别名；普通诊断日志可省略 | 聚合相同类型的错误，避免依赖变动的文字 |
+| 稳定事件类别（如 `event.name`） | 关键运维事件记录稳定类别名；普通诊断日志可省略 | 聚合同类错误，不依赖变化的文字 |
 | `service.version` | 能获取时写入 | 关联新旧版本的异常 |
 | `error.code` | 错误事件如有稳定错误码则写入 | 区分错误类型；不要把动态异常文本当错误码 |
 | `correlation.id` | 请求、任务或批处理有安全的关联标识时写入 | 串起同一次操作；不写原始会话令牌 |
 
-主机与实例身份可由采集端在确定来源后附加；不得猜测并填入错误身份。同一个错误类型使用稳定的 `event.name`，变化的详情放在独立字段或安全的 `message` 中。发生事件的时间、服务名、错误类型、原始等级须保留原义。业务方若已有请求 ID、日志等级和错误码约定，应先映射，避免双重标准。
+主机与实例身份可由采集端在确定来源后附加；不得猜测并填入错误身份。关键运维事件使用稳定类别，变化的详情放在安全的描述或其他已有字段中。发生时间、服务名、错误类型与原始等级须保留原义；已有请求 ID、等级和错误码约定应先映射，避免双重标准。不同日志格式能否稳定提取这些信息是后续需验证的风险。
 
-### 示例（虚构，无真实医院数据）
+### 示例（虚构的现有文本格式，非强制模板）
 
-```json
-{"timestamp":"2026-11-01T09:03:12+08:00","service.name":"report-worker","service.version":"2.4.0","severity":"ERROR","event.name":"DEPENDENCY_UNAVAILABLE","error.code":"STORAGE_TIMEOUT","correlation.id":"job-7f3a","message":"存储操作超时"}
+```text
+2026-11-01T09:03:12+08:00 ERROR report-worker DEPENDENCY_UNAVAILABLE code=STORAGE_TIMEOUT correlation=job-7f3a 存储操作超时
 ```
 
 此记录**不直接等于正式告警**：确定性故障按规则产生告警；筛选后的日志可以交给院内模型判断是否值得形成标明模型来源、待人工核实的告警。
 
 ## 推荐首先覆盖的事件
 
-服务启动、退出、无法启动；关键依赖不可用及恢复；不可重试的任务失败；持续的资源限制或队列处理失败。各产品自行列出稳定事件类别及含义，不把每次普通重试或每条 `ERROR` 都定为正式告警。[OWASP 日志指南](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#which-events-to-log) 还建议记录与安全相关的认证/授权失败、配置变更等，但是否进入本监控项目的告警范围需单独决定。
+建议先统一一小组关键运维事件类别：服务启动、退出、无法启动；关键依赖不可用及恢复；不可重试的任务失败。其他事件类别由各产品自定义并说明含义，不把每次普通重试或每条 `ERROR` 都定为正式告警。[OWASP 日志指南](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#which-events-to-log) 还建议记录与安全相关的认证/授权失败、配置变更等，但是否进入本监控项目的告警范围需单独决定。
 
 ## 敏感数据底线
 
@@ -41,9 +41,9 @@
 
 ## 评审时需要决定
 
-1. 新服务采用上述 JSON Lines 格式，还是只要求字段语义一致、输出格式由各服务选择？
+1. 已决定暂不统一 JSON 结构；各产品现有输出格式怎样记录上述语义和采集侧映射？
 2. 哪些现有日志等级、服务名称和错误码已有公司约定，需要沿用或映射？
-3. 哪些事件要成为公司统一的稳定 `event.name`，哪些属于各产品自定义？
+3. 公司统一的小组事件类别具体取哪些名称、各自何时产生？其余类别由各产品自定义。
 4. 现有服务修改时从哪些模块开始遵循，是否允许某些无法结构化的旧日志暂时例外？
 
 ## 参考
